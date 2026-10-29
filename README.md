@@ -62,10 +62,9 @@ Production build:
 npm run build
 ```
 
-## Next engineering milestones
+## Remaining production gates
 
-1. Replace browser-local auth with an OIDC-backed Sentinel session and server-side Civitas gateway.
-2. Persist approval requests and decisions with tenant-scoped authorization.
-3. Replace Civitas SQLite storage with a Postgres adapter and migrations.
-4. Add sandboxed tool execution, streaming sessions, cancellation, and replayable traces.
-5. Add usage metering, rate limits, evals, SLOs, and deployment controls.
+1. Connect the BFF to the deployed identity/session provider and Civitas OIDC tenant claims.
+2. Run the browser-to-BFF-to-Civitas flow against managed Postgres with backups and recovery evidence.
+3. Execute the opt-in live OpenAI smoke test with a server-side credential and record the receipt.
+4. Add exported OpenTelemetry traces, SLO dashboards, load measurements, and deployment promotion/rollback evidence.
