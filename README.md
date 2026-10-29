@@ -45,7 +45,7 @@ CIVITAS_URL=http://127.0.0.1:8788 CIVITAS_API_TOKEN=secret npm run dev
 CIVITAS_URL=http://127.0.0.1:8788 CIVITAS_API_TOKEN=secret npm run bff
 ```
 
-For local development, the Vite proxy can attach `CIVITAS_API_TOKEN` from the Node process environment. The browser never receives that credential. For deployment, run `npm run bff` behind the authenticated Sentinel session/identity layer and set `CIVITAS_URL` plus server-only `CIVITAS_API_TOKEN`; do not define any `VITE_*TOKEN` value.
+For local development, the Vite proxy can attach `CIVITAS_API_TOKEN` from the Node process environment. The browser never receives that credential. For deployment, run `npm run bff` behind the authenticated Sentinel session/identity layer and set `CIVITAS_URL` plus server-only `CIVITAS_API_TOKEN`; do not define any `VITE_*TOKEN` value. In production the BFF requires the trusted proxy to provide `x-forwarded-user` and `x-forwarded-authorization` (or the configured header names); it forwards that authenticated identity to Civitas OIDC rather than accepting browser-supplied credentials.
 
 The Command Center now sends `task.plan` requests and displays the returned receipt status. Configure Civitas with `CIVITAS_AGENT_RUNTIME=openai` and the optional `civitas[agent-runtime]` dependency to enable the OpenAI Agents API-backed `agent.run` capability.
 
