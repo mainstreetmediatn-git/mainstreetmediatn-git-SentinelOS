@@ -48,3 +48,26 @@ describe('SentinelRuntime', () => {
     expect(receipt.policy.allowed).toBe(false)
   })
 })
+
+  it('rejects duplicate logical commands while the first run is pending', async () => {
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => { release = resolve })
+    const runtime = createDefaultSentinelRuntime({
+      execute: async () => {
+        await pending
+        return { result: { ok: true } }
+      },
+    })
+
+    const request = {
+      requestId: 'req-duplicate-1',
+      principal: 'owner',
+      agentId: 'orchestrator',
+      capabilityId: 'task.plan' as const,
+      input: { goal: 'same command' },
+    }
+    const first = runtime.execute(request)
+    await expect(runtime.execute({ ...request, requestId: 'req-duplicate-2' })).rejects.toThrow('already in progress')
+    release()
+    await expect(first).resolves.toMatchObject({ status: 'completed' })
+  })
