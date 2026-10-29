@@ -98,18 +98,26 @@ export default function App() {
   const [approvalGoal, setApprovalGoal] = useState('')
   const [approvalStatus, setApprovalStatus] = useState<string | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [jobs, setJobs] = useState<Array<Record<string, unknown>>>([])
+  const [jobSearch, setJobSearch] = useState('')
   const runtime = useMemo(() => createDefaultSentinelRuntime(), [])
 
   const working = useMemo(() => agents.filter((a) => a.status === 'working').length, [agents])
+  const filteredJobs = useMemo(() => {
+    const query = jobSearch.trim().toLowerCase()
+    if (!query) return jobs
+    return jobs.filter((job) => JSON.stringify(job).toLowerCase().includes(query))
+  }, [jobs, jobSearch])
 
   useEffect(() => {
     let cancelled = false
     async function syncControlPlane() {
       try {
         const adapter = runtime.civitas
-        const [remoteAgents, remoteEvents] = await Promise.all([
+        const [remoteAgents, remoteEvents, remoteJobs] = await Promise.all([
           adapter.listAgents?.(),
           adapter.listAuditEvents?.(),
+          adapter.listJobs?.(),
         ])
         if (cancelled) return
         if (remoteAgents?.length) {
@@ -123,9 +131,10 @@ export default function App() {
           }))
           setAgents(nextAgents)
         }
-        if (remoteEvents?.length) {
+        if (remoteEvents) {
           setEvents(remoteEvents.map((event: AuditEvent) => [event.actor, event.message, event.at]))
         }
+        if (remoteJobs) setJobs(remoteJobs)
         setSyncError(null)
       } catch (error) {
         if (!cancelled) setSyncError(error instanceof Error ? error.message : 'Control plane sync failed')
@@ -193,6 +202,16 @@ export default function App() {
       setApprovalStatus(receipt.status)
     } catch (error) {
       setApprovalStatus(error instanceof Error ? error.message : 'Approved work failed')
+    }
+  }
+
+  async function cancelJob(jobId: string) {
+    try {
+      const job = await runtime.cancelJob(jobId)
+      setJobs((previous) => previous.map((item) => item.jobId === jobId ? job : item))
+      setEvents((prev) => [['Operator', `Cancelled job ${jobId}`, 'now'], ...prev].slice(0, 8))
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'Job cancellation failed')
     }
   }
 
@@ -337,7 +356,16 @@ export default function App() {
           {active === 'activity' && (
             <section>
               <div className="section-head"><div><div className="eyebrow"><Activity size={14}/> AUDIT STREAM</div><h1>System activity</h1><p>Every material action performed by Sentinel and its agents.</p></div></div>
-              <div className="panel glass full"><div className="timeline expanded">{events.map(([who, what, when], i) => <div className="event" key={`${who}-${i}`}><span className="event-dot"/><div><strong>{who}</strong><p>{what}</p><small>{when}</small></div></div>)}</div></div>
+              <div className="panel glass full">
+                <div className="command-input"><input value={jobSearch} onChange={(event) => setJobSearch(event.target.value)} placeholder="Search live jobs and receipts…" /></div>
+                {filteredJobs.length > 0 && <div className="timeline expanded">{filteredJobs.map((job) => {
+                  const jobId = typeof job.jobId === 'string' ? job.jobId : 'unknown-job'
+                  const status = typeof job.status === 'string' ? job.status : 'unknown'
+                  const error = typeof job.error === 'string' ? job.error : ''
+                  return <div className="event" key={jobId}><span className="event-dot"/><div><strong>{jobId}</strong><p>{status}{error ? ` · ${error}` : ''}</p><small>{typeof job.requestId === 'string' ? job.requestId : 'no request id'}</small>{(status === 'queued' || status === 'running') && <button className="ghost" onClick={() => void cancelJob(jobId)}>Cancel</button>}</div></div>
+                })}</div>}
+                <div className="timeline expanded">{events.map(([who, what, when], i) => <div className="event" key={`${who}-${i}`}><span className="event-dot"/><div><strong>{who}</strong><p>{what}</p><small>{when}</small></div></div>)}</div>
+              </div>
             </section>
           )}
 
