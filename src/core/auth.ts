@@ -52,6 +52,15 @@ function token(prefix: string): string {
   return id(prefix)
 }
 
+function pairingCode() {
+  if (globalThis.crypto?.getRandomValues) {
+    const values = new Uint32Array(1)
+    globalThis.crypto.getRandomValues(values)
+    return (100000 + (values[0] % 900000)).toString()
+  }
+  return Math.floor(100000 + Math.random() * 900000).toString()
+}
+
 function browserStorage(): StorageLike | undefined {
   try {
     if (typeof window !== 'undefined' && window.localStorage) return window.localStorage
@@ -134,7 +143,7 @@ export class DevicePairingService {
     const challenge: PairingChallenge = {
       id: id('pair'),
       label: label.trim() || 'Unnamed device',
-      code: Math.floor(100000 + Math.random() * 900000).toString(),
+      code: pairingCode(),
       capabilities: [...capabilities],
       createdAt,
       expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
