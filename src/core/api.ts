@@ -59,7 +59,20 @@ export class SentinelCoreApi {
     return () => this.listeners.delete(listener)
   }
 
-  async execute(request: Omit<ExecutionRequest, 'principal'> & { principal?: string }, approval: boolean | { approvalId: string } = false) {
+  async registerAgent(agent: AgentManifest) {
+    const session = this.requireSession()
+    const registered = await this.runtime.registerAgent(agent)
+    this.runtime.audit.append({
+      actor: session.user.id,
+      type: 'registration',
+      message: 'Registered agent ' + registered.id + ' through Sentinel Core',
+      details: { agentId: registered.id },
+    })
+    this.emit()
+    return registered
+  }
+
+  async execute(request: Omit<ExecutionRequest, 'principal'> & { principal?: string }, approval?: { approvalId: string }) {
     const session = this.requireSession()
     const receipt = await this.runtime.execute(
       {
