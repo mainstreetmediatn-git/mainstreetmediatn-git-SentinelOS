@@ -208,7 +208,7 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = core.subscribe(setState)
     void core.hydrateRemote()
-    return unsubscribe
+    return () => { unsubscribe() }
   }, [core])
 
   const agents = state.agents
