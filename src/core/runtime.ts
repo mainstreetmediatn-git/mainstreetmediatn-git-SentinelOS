@@ -51,6 +51,17 @@ export type ApprovalRecord = {
   expiresAt?: string
 }
 
+
+function executionKey(request: ExecutionRequest): string {
+  return JSON.stringify({
+    tenantId: request.tenantId ?? 'local',
+    principal: request.principal,
+    agentId: request.agentId,
+    capabilityId: request.capabilityId,
+    input: request.input,
+  })
+}
+
 export type ExecutionReceipt = {
   requestId: string
   agentId: string
@@ -202,11 +213,7 @@ export class SentinelRuntime {
   ) {}
 
   async execute(request: ExecutionRequest, approved = false): Promise<ExecutionReceipt> {
-    const key = JSON.stringify({
-      agentId: request.agentId,
-      capabilityId: request.capabilityId,
-      input: request.input,
-    })
+    const key = executionKey(request)
     if (this.inFlight.has(key)) throw new Error('Execution already in progress for this command')
     this.inFlight.add(key)
     const startedAt = new Date().toISOString()
@@ -279,11 +286,7 @@ export class SentinelRuntime {
   }
 
   private release(request: ExecutionRequest) {
-    const key = JSON.stringify({
-      agentId: request.agentId,
-      capabilityId: request.capabilityId,
-      input: request.input,
-    })
+    const key = executionKey(request)
     this.inFlight.delete(key)
   }
 
