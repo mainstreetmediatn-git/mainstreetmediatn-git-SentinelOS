@@ -17,7 +17,8 @@ This roadmap tracks the work after the initial Sentinel Core foundation.
 - [x] Replace the local audit-only path with a durable outbox that retries remote event delivery without losing the local trail.
 - [x] Add contract tests for remote payloads and failure behavior.
 - [ ] Connect deployment secrets and the Civitas/API endpoints in the hosting environment.
-- [ ] Add end-to-end checks for approval, execution receipt, sign-out, and device revocation flows.
+- [x] Add Core API integration checks for approval, execution receipt, sign-out, and device revocation flows.
+- [ ] Add browser-level end-to-end checks once a hosted test environment is configured.
 
 ## Current boundary
 
