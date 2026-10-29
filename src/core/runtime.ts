@@ -147,6 +147,7 @@ export interface CivitasAdapter {
   listAgents?(): Promise<AgentManifest[]>
   listAuditEvents?(): Promise<AuditEvent[]>
   listJobs?(): Promise<Array<Record<string, unknown>>>
+  cancelJob?(jobId: string): Promise<Record<string, unknown>>
 }
 
 export class LocalCivitasAdapter implements CivitasAdapter {
@@ -266,6 +267,11 @@ export class SentinelRuntime {
   async rejectApproval(approvalId: string): Promise<ApprovalRecord> {
     if (!this.civitas.rejectApproval) throw new Error('Civitas approval API is not configured')
     return this.civitas.rejectApproval(approvalId)
+  }
+
+  async cancelJob(jobId: string): Promise<Record<string, unknown>> {
+    if (!this.civitas.cancelJob) throw new Error('Civitas job cancellation API is not configured')
+    return this.civitas.cancelJob(jobId)
   }
 
   private release(request: ExecutionRequest) {
