@@ -94,23 +94,19 @@ export class HttpDevicePairingGateway implements RemoteDeviceGateway {
   }
 
   async createChallenge(label: string, capabilities: string[]) {
-    const response = await this.client.post<{ challenge?: PairingChallenge } | PairingChallenge>(
+    const response = await this.client.post<{ challenge: PairingChallenge } | PairingChallenge>(
       '/v1/devices/pair/challenge',
       { label, capabilities },
     )
-    const challenge = isChallengeEnvelope(response) ? response.challenge : response
-    if (!challenge) throw new Error('Sentinel API did not return a pairing challenge.')
-    return challenge
+    return isChallengeEnvelope(response) ? response.challenge : response
   }
 
   async pair(challengeId: string, code: string) {
-    const response = await this.client.post<{ device?: PairedDevice } | PairedDevice>(
+    const response = await this.client.post<{ device: PairedDevice } | PairedDevice>(
       '/v1/devices/pair',
       { challengeId, code },
     )
-    const device = isDeviceEnvelope(response) ? response.device : response
-    if (!device) throw new Error('Sentinel API did not return a paired device.')
-    return device
+    return isDeviceEnvelope(response) ? response.device : response
   }
 
   async revoke(deviceId: string) {
