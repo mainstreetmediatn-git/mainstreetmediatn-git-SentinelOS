@@ -70,4 +70,31 @@ describe('SentinelRuntime', () => {
     release()
     await expect(first).resolves.toMatchObject({ status: 'completed' })
   })
+  it('allows identical commands across tenant and principal scopes', async () => {
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => { release = resolve })
+    let executions = 0
+    const runtime = createDefaultSentinelRuntime({
+      execute: async () => {
+        executions += 1
+        await pending
+        return { result: { ok: true } }
+      },
+    })
+
+    const baseRequest = {
+      requestId: 'req-scoped-1',
+      agentId: 'orchestrator',
+      capabilityId: 'task.plan' as const,
+      input: { goal: 'same command' },
+    }
+    const first = runtime.execute({ ...baseRequest, tenantId: 'tenant-a', principal: 'owner' })
+    const second = runtime.execute({ ...baseRequest, requestId: 'req-scoped-2', tenantId: 'tenant-b', principal: 'owner' })
+    const third = runtime.execute({ ...baseRequest, requestId: 'req-scoped-3', tenantId: 'tenant-a', principal: 'operator' })
+
+    expect(executions).toBe(3)
+    release()
+    await expect(Promise.all([first, second, third])).resolves.toHaveLength(3)
+  })
+
 })
