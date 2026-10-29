@@ -103,6 +103,14 @@ export class CivitasHttpAdapter implements CivitasAdapter {
     return parseApproval(payload.approval)
   }
 
+  async rejectApproval(approvalId: string): Promise<ApprovalRecord> {
+    const payload = await this.post(
+      `/v1/approvals/${encodeURIComponent(approvalId)}/reject`,
+      {},
+    )
+    return parseApproval(payload.approval)
+  }
+
   async listAgents(): Promise<AgentManifest[]> {
     const payload = await this.get('/v1/agents')
     return Array.isArray(payload.agents) ? payload.agents as AgentManifest[] : []
