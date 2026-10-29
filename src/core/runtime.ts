@@ -1,3 +1,11 @@
+import { CivitasHttpAdapter } from './civitas'
+
+type ViteEnv = {
+  VITE_CIVITAS_URL?: string
+  VITE_CIVITAS_API_TOKEN?: string
+  VITE_CIVITAS_AGENT_RUNTIME?: 'local' | 'openai'
+}
+
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
 export type AgentState = 'ready' | 'planning' | 'executing' | 'waiting' | 'blocked' | 'needs_approval' | 'failed' | 'offline' | 'paused' | 'completed'
 
@@ -20,6 +28,8 @@ export type AgentManifest = {
 
 export type ExecutionRequest = {
   requestId: string
+  tenantId?: string
+  approvalId?: string
   principal: string
   agentId: string
   capabilityId: string
@@ -30,6 +40,28 @@ export type ExecutionRequest = {
   }
 }
 
+export type ApprovalRecord = {
+  approvalId: string
+  requestId: string
+  tenantId?: string
+  principal: string
+  capabilityId: string
+  status: 'pending' | 'approved' | 'rejected' | 'expired'
+  approvedBy?: string | null
+  expiresAt?: string
+}
+
+
+function executionKey(request: ExecutionRequest): string {
+  return JSON.stringify({
+    tenantId: request.tenantId ?? 'local',
+    principal: request.principal,
+    agentId: request.agentId,
+    capabilityId: request.capabilityId,
+    input: request.input,
+  })
+}
+
 export type ExecutionReceipt = {
   requestId: string
   agentId: string
@@ -38,6 +70,7 @@ export type ExecutionReceipt = {
   startedAt: string
   finishedAt: string
   result?: unknown
+  error?: string
   evidence: string[]
   actionsTaken: string[]
   policy: {
@@ -118,6 +151,18 @@ export class PolicyEngine {
 
 export interface CivitasAdapter {
   execute(request: ExecutionRequest, agent: AgentManifest, capability: Capability): Promise<{ result: unknown; evidence?: string[]; actionsTaken?: string[] }>
+  requestApproval?(request: ExecutionRequest, agent: AgentManifest, capability: Capability): Promise<ApprovalRecord>
+  getApproval?(approvalId: string): Promise<ApprovalRecord>
+  approveApproval?(approvalId: string): Promise<ApprovalRecord>
+  rejectApproval?(approvalId: string): Promise<ApprovalRecord>
+  listAgents?(): Promise<AgentManifest[]>
+  listAuditEvents?(): Promise<AuditEvent[]>
+  listJobs?(): Promise<Array<Record<string, unknown>>>
+  listMemory?(): Promise<Array<Record<string, unknown>>>
+  listDevices?(): Promise<Array<Record<string, unknown>>>
+  listAutomations?(): Promise<Array<Record<string, unknown>>>
+  getHealth?(): Promise<Record<string, unknown>>
+  cancelJob?(jobId: string): Promise<Record<string, unknown>>
 }
 
 export class LocalCivitasAdapter implements CivitasAdapter {
@@ -125,6 +170,8 @@ export class LocalCivitasAdapter implements CivitasAdapter {
     return {
       result: {
         accepted: true,
+        simulated: true,
+        mode: 'local-development',
         delegatedBy: 'civitas',
         agent: agent.id,
         capability: capability.id,
@@ -155,6 +202,8 @@ export class AuditStore {
 }
 
 export class SentinelRuntime {
+  private readonly inFlight = new Set<string>()
+
   constructor(
     readonly agents = new AgentRegistry(),
     readonly capabilities = new CapabilityRegistry(),
@@ -164,6 +213,9 @@ export class SentinelRuntime {
   ) {}
 
   async execute(request: ExecutionRequest, approved = false): Promise<ExecutionReceipt> {
+    const key = executionKey(request)
+    if (this.inFlight.has(key)) throw new Error('Execution already in progress for this command')
+    this.inFlight.add(key)
     const startedAt = new Date().toISOString()
     const agent = this.agents.get(request.agentId)
     const capability = this.capabilities.get(request.capabilityId)
@@ -186,6 +238,7 @@ export class SentinelRuntime {
       const execution = await this.civitas.execute(request, agent, capability)
       this.agents.setState(agent.id, 'ready')
       this.audit.append({ actor: agent.id, type: 'execution', message: `Completed ${capability.id}` })
+      this.inFlight.delete(key)
       return {
         requestId: request.requestId,
         agentId: request.agentId,
@@ -204,7 +257,41 @@ export class SentinelRuntime {
     }
   }
 
+  async requestApproval(request: ExecutionRequest): Promise<ApprovalRecord> {
+    const agent = this.agents.get(request.agentId)
+    const capability = this.capabilities.get(request.capabilityId)
+    if (!agent || !capability) throw new Error('Cannot request approval for an unknown agent or capability')
+    if (!this.civitas.requestApproval) throw new Error('Civitas approval API is not configured')
+    return this.civitas.requestApproval(request, agent, capability)
+  }
+
+  async getApproval(approvalId: string): Promise<ApprovalRecord> {
+    if (!this.civitas.getApproval) throw new Error('Civitas approval API is not configured')
+    return this.civitas.getApproval(approvalId)
+  }
+
+  async approveApproval(approvalId: string): Promise<ApprovalRecord> {
+    if (!this.civitas.approveApproval) throw new Error('Civitas approval API is not configured')
+    return this.civitas.approveApproval(approvalId)
+  }
+
+  async rejectApproval(approvalId: string): Promise<ApprovalRecord> {
+    if (!this.civitas.rejectApproval) throw new Error('Civitas approval API is not configured')
+    return this.civitas.rejectApproval(approvalId)
+  }
+
+  async cancelJob(jobId: string): Promise<Record<string, unknown>> {
+    if (!this.civitas.cancelJob) throw new Error('Civitas job cancellation API is not configured')
+    return this.civitas.cancelJob(jobId)
+  }
+
+  private release(request: ExecutionRequest) {
+    const key = executionKey(request)
+    this.inFlight.delete(key)
+  }
+
   private finish(request: ExecutionRequest, startedAt: string, status: ExecutionReceipt['status'], allowed: boolean, reason: string): ExecutionReceipt {
+    this.release(request)
     return {
       requestId: request.requestId,
       agentId: request.agentId,
@@ -214,15 +301,36 @@ export class SentinelRuntime {
       finishedAt: new Date().toISOString(),
       evidence: [],
       actionsTaken: [],
+      error: status === 'failed' ? reason : undefined,
       policy: { allowed, reason },
     }
   }
 }
 
-export function createDefaultSentinelRuntime() {
-  const runtime = new SentinelRuntime()
+export function defaultCommandCapability(): 'task.plan' | 'agent.run' {
+  const env = (import.meta as ImportMeta & { env?: ViteEnv }).env
+  return env?.VITE_CIVITAS_AGENT_RUNTIME === 'openai' ? 'agent.run' : 'task.plan'
+}
+
+function configuredCivitasAdapter(): CivitasAdapter {
+  const env = (import.meta as ImportMeta & { env?: ViteEnv }).env
+  if (!env?.VITE_CIVITAS_URL && !env?.VITE_CIVITAS_AGENT_RUNTIME) return new LocalCivitasAdapter()
+  return new CivitasHttpAdapter({
+    baseUrl: env.VITE_CIVITAS_URL ?? '/api/civitas',
+    token: import.meta.env.DEV ? env.VITE_CIVITAS_API_TOKEN : undefined,
+  })
+}
+
+export function createDefaultSentinelRuntime(adapter?: CivitasAdapter) {
+  const runtime = new SentinelRuntime(
+    undefined,
+    undefined,
+    undefined,
+    adapter ?? configuredCivitasAdapter(),
+  )
 
   runtime.capabilities.register({ id: 'task.plan', description: 'Plan and decompose a user goal.', risk: 'low', requiresApproval: false })
+  runtime.capabilities.register({ id: 'agent.run', description: 'Run a governed agent task through Civitas.', risk: 'medium', requiresApproval: false })
   runtime.capabilities.register({ id: 'repo.write', description: 'Write approved changes to a repository.', risk: 'high', requiresApproval: true })
   runtime.capabilities.register({ id: 'memory.read', description: 'Retrieve Sentinel project context.', risk: 'medium', requiresApproval: false })
 
@@ -232,8 +340,8 @@ export function createDefaultSentinelRuntime() {
     version: '0.1.0',
     role: 'Plans, delegates, and supervises Sentinel work.',
     state: 'ready',
-    capabilities: ['task.plan'],
-    permissions: ['capability:task.plan'],
+    capabilities: ['task.plan', 'agent.run'],
+    permissions: ['capability:task.plan', 'capability:agent.run'],
   })
   runtime.agents.register({
     id: 'developer',
@@ -241,8 +349,8 @@ export function createDefaultSentinelRuntime() {
     version: '0.1.0',
     role: 'Implements, tests, and integrates code changes.',
     state: 'ready',
-    capabilities: ['repo.write'],
-    permissions: ['capability:repo.write'],
+    capabilities: ['repo.write', 'agent.run'],
+    permissions: ['capability:repo.write', 'capability:agent.run'],
   })
   runtime.agents.register({
     id: 'memory',
