@@ -150,6 +150,7 @@ export interface CivitasAdapter {
   listMemory?(): Promise<Array<Record<string, unknown>>>
   listDevices?(): Promise<Array<Record<string, unknown>>>
   listAutomations?(): Promise<Array<Record<string, unknown>>>
+  getHealth?(): Promise<Record<string, unknown>>
   cancelJob?(jobId: string): Promise<Record<string, unknown>>
 }
 
