@@ -47,7 +47,6 @@ describe('SentinelRuntime', () => {
     expect(receipt.status).toBe('denied')
     expect(receipt.policy.allowed).toBe(false)
   })
-})
 
   it('rejects duplicate logical commands while the first run is pending', async () => {
     let release!: () => void
@@ -71,3 +70,4 @@ describe('SentinelRuntime', () => {
     release()
     await expect(first).resolves.toMatchObject({ status: 'completed' })
   })
+})
