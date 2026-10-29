@@ -391,7 +391,7 @@ export class HttpCivitasAdapter implements CivitasAdapter {
 }
 
 export function createCivitasAdapter(endpoint?: string): CivitasAdapter {
-  return endpoint && globalThis.fetch ? new HttpCivitasAdapter(endpoint) : new LocalCivitasAdapter()
+  return endpoint ? new HttpCivitasAdapter(endpoint) : new LocalCivitasAdapter()
 }
 
 export class AuditStore {
