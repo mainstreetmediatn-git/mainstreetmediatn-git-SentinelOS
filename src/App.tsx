@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Activity,
   Bot,
@@ -25,7 +25,13 @@ import {
   X,
   Zap,
 } from 'lucide-react'
-import { createDefaultSentinelRuntime, defaultCommandCapability } from './core/runtime'
+import {
+  createDefaultSentinelRuntime,
+  defaultCommandCapability,
+  type AgentManifest,
+  type AuditEvent,
+  type ExecutionRequest,
+} from './core/runtime'
 
 type NavKey = 'home' | 'agents' | 'flows' | 'memory' | 'devices' | 'activity' | 'settings'
 type AgentStatus = 'online' | 'working' | 'idle'
@@ -86,34 +92,107 @@ export default function App() {
   const [command, setCommand] = useState('')
   const [agents, setAgents] = useState(initialAgents)
   const [events, setEvents] = useState(activity)
+  const [isRunning, setIsRunning] = useState(false)
+  const [approvalId, setApprovalId] = useState('')
+  const [approvalStatus, setApprovalStatus] = useState<string | null>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
   const runtime = useMemo(() => createDefaultSentinelRuntime(), [])
 
   const working = useMemo(() => agents.filter((a) => a.status === 'working').length, [agents])
 
+  useEffect(() => {
+    let cancelled = false
+    async function syncControlPlane() {
+      try {
+        const adapter = runtime.civitas
+        const [remoteAgents, remoteEvents] = await Promise.all([
+          adapter.listAgents?.(),
+          adapter.listAuditEvents?.(),
+        ])
+        if (cancelled) return
+        if (remoteAgents?.length) {
+          const nextAgents: Agent[] = remoteAgents.map((agent: AgentManifest, index: number) => ({
+            id: agent.id,
+            name: agent.name,
+            role: agent.role,
+            status: agent.state === 'executing' || agent.state === 'planning' ? 'working' : agent.state === 'offline' ? 'idle' : 'online',
+            accent: ['violet', 'cyan', 'green', 'blue', 'orange', 'rose'][index % 6],
+            tasks: 0,
+          }))
+          setAgents(nextAgents)
+        }
+        if (remoteEvents?.length) {
+          setEvents(remoteEvents.map((event: AuditEvent) => [event.actor, event.message, event.at]))
+        }
+        setSyncError(null)
+      } catch (error) {
+        if (!cancelled) setSyncError(error instanceof Error ? error.message : 'Control plane sync failed')
+      }
+    }
+    void syncControlPlane()
+    return () => { cancelled = true }
+  }, [runtime])
+
+  async function requestWriteApproval() {
+    const text = command.trim()
+    if (!text || isRunning) return
+    try {
+      const request: ExecutionRequest = {
+        requestId: globalThis.crypto?.randomUUID?.() ?? `req-${Date.now()}`,
+        principal: 'owner',
+        agentId: 'developer',
+        capabilityId: 'repo.write',
+        input: { goal: text },
+      }
+      const approval = await runtime.requestApproval(request)
+      setApprovalId(approval.approvalId)
+      setApprovalStatus(approval.status)
+      setEvents((prev) => [['Sentinel Guard', `Approval requested: ${approval.approvalId}`, 'now'], ...prev].slice(0, 8))
+    } catch (error) {
+      setApprovalStatus(error instanceof Error ? error.message : 'Approval request failed')
+    }
+  }
+
+  async function approveWriteApproval() {
+    if (!approvalId) return
+    try {
+      const approval = await runtime.approveApproval(approvalId)
+      setApprovalStatus(approval.status)
+    } catch (error) {
+      setApprovalStatus(error instanceof Error ? error.message : 'Approval failed')
+    }
+  }
+
   async function runCommand() {
     const text = command.trim()
-    if (!text) return
+    if (!text || isRunning) return
+    setIsRunning(true)
     const requestId = globalThis.crypto?.randomUUID?.() ?? `req-${Date.now()}`
     setEvents((prev) => [['Orchestrator', `Submitted command: “${text}”`, 'now'], ...prev].slice(0, 8))
     setAgents((prev) => prev.map((a) => a.id === 'orchestrator' ? { ...a, status: 'working', tasks: a.tasks + 1 } : a))
 
     try {
-      const receipt = await runtime.execute({
+      const request: ExecutionRequest = {
         requestId,
         principal: 'owner',
         agentId: 'orchestrator',
         capabilityId: defaultCommandCapability(),
         input: { goal: text },
-      })
+      }
+      const receipt = await runtime.execute(request)
       const result = receipt.result && typeof receipt.result === 'object'
         ? receipt.result as { status?: string; mode?: string }
         : {}
       const mode = result.mode === 'local-development' ? ' (local development adapter)' : ''
-      setEvents((prev) => [['Orchestrator', `${receipt.status} · ${result.status ?? 'receipt recorded'}${mode}`, 'now'], ...prev].slice(0, 8))
+      const detail = receipt.status === 'completed'
+        ? result.status ?? 'completed'
+        : receipt.error ?? receipt.policy.reason
+      setEvents((prev) => [['Orchestrator', `${receipt.status} · ${detail}${mode}`, 'now'], ...prev].slice(0, 8))
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Execution failed'
       setEvents((prev) => [['Sentinel Guard', `Execution failed: ${message}`, 'now'], ...prev].slice(0, 8))
     } finally {
+      setIsRunning(false)
       setAgents((prev) => prev.map((a) => a.id === 'orchestrator' ? { ...a, status: 'online' } : a))
       setCommand('')
     }
@@ -162,7 +241,7 @@ export default function App() {
             <>
               <section className="hero-row">
                 <div>
-                  <div className="eyebrow"><Sparkles size={14} /> AGENTIC CONTROL PLANE</div>
+                  <div className="eyebrow"><Sparkles size={14} /> AGENTIC CONTROL PLANE</div>{syncError && <small className="sync-error">Live control plane: {syncError}</small>}
                   <h1>Your digital world,<br/><span>under one command.</span></h1>
                   <p>Sentinel coordinates agents, devices, memory, automations, and approvals from one secure operating layer.</p>
                 </div>
@@ -176,7 +255,12 @@ export default function App() {
                 <div className="command-head"><div><Command size={18}/><strong>Command Sentinel</strong></div><span>Orchestrator ready</span></div>
                 <div className="command-input">
                   <textarea value={command} onChange={(e) => setCommand(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runCommand() } }} placeholder="Tell Sentinel what you want accomplished…" />
-                  <button onClick={runCommand}><Zap size={17}/> Execute</button>
+                  <button onClick={runCommand} disabled={isRunning}><Zap size={17}/> {isRunning ? 'Running…' : 'Execute'}</button>
+                </div>
+                <div className="approval-tools">
+                  <button className="ghost" onClick={requestWriteApproval} disabled={isRunning || !command.trim()}>Request write approval</button>
+                  {approvalId && <span>Approval {approvalId.slice(0, 16)} · {approvalStatus}</span>}
+                  {approvalId && approvalStatus === 'pending' && <button className="ghost" onClick={approveWriteApproval}>Approve</button>}
                 </div>
                 <div className="suggestions">
                   <button onClick={() => setCommand('Scan my active projects and prioritize the next three actions')}>Prioritize projects</button>
