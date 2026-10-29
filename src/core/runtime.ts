@@ -246,6 +246,7 @@ export function createDefaultSentinelRuntime(adapter?: CivitasAdapter) {
   )
 
   runtime.capabilities.register({ id: 'task.plan', description: 'Plan and decompose a user goal.', risk: 'low', requiresApproval: false })
+  runtime.capabilities.register({ id: 'agent.run', description: 'Run a governed agent task through Civitas.', risk: 'medium', requiresApproval: false })
   runtime.capabilities.register({ id: 'repo.write', description: 'Write approved changes to a repository.', risk: 'high', requiresApproval: true })
   runtime.capabilities.register({ id: 'memory.read', description: 'Retrieve Sentinel project context.', risk: 'medium', requiresApproval: false })
 
@@ -264,8 +265,8 @@ export function createDefaultSentinelRuntime(adapter?: CivitasAdapter) {
     version: '0.1.0',
     role: 'Implements, tests, and integrates code changes.',
     state: 'ready',
-    capabilities: ['repo.write'],
-    permissions: ['capability:repo.write'],
+    capabilities: ['repo.write', 'agent.run'],
+    permissions: ['capability:repo.write', 'capability:agent.run'],
   })
   runtime.agents.register({
     id: 'memory',
