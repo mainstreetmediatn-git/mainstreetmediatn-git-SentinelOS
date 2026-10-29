@@ -515,7 +515,7 @@ export class SentinelRuntime {
 
   async execute(
     request: ExecutionRequest,
-    approval: boolean | { approvalId: string } = false,
+    approval?: { approvalId: string },
   ): Promise<ExecutionReceipt> {
     const startedAt = new Date().toISOString()
     const agent = this.agents.get(request.agentId)
@@ -547,12 +547,10 @@ export class SentinelRuntime {
 
     let approvalId: string | undefined
     if (decision.requiresApproval) {
-      approvalId = typeof approval === 'object' ? approval.approvalId : request.approvalId
+      approvalId = approval?.approvalId ?? request.approvalId
       const approvalRecord = approvalId ? this.approvals.get(approvalId) : undefined
 
-      if (approval === true) {
-        approvalId = approvalId ?? id('approval')
-      } else if (!approvalRecord || approvalRecord.status !== 'approved' || approvalRecord.requestId !== request.requestId) {
+      if (!approvalRecord || approvalRecord.status !== 'approved' || approvalRecord.requestId !== request.requestId) {
         const pending = this.createApproval(request, decision)
         return this.finish(request, startedAt, 'approval_required', true, decision.reason, pending.id, decision)
       }
