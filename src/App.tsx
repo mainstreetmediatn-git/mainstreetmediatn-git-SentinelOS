@@ -25,7 +25,7 @@ import {
   X,
   Zap,
 } from 'lucide-react'
-import { createDefaultSentinelRuntime } from './core/runtime'
+import { createDefaultSentinelRuntime, defaultCommandCapability } from './core/runtime'
 
 type NavKey = 'home' | 'agents' | 'flows' | 'memory' | 'devices' | 'activity' | 'settings'
 type AgentStatus = 'online' | 'working' | 'idle'
@@ -102,7 +102,7 @@ export default function App() {
         requestId,
         principal: 'owner',
         agentId: 'orchestrator',
-        capabilityId: 'task.plan',
+        capabilityId: defaultCommandCapability(),
         input: { goal: text },
       })
       const result = receipt.result && typeof receipt.result === 'object'
