@@ -203,7 +203,6 @@ export class SentinelRuntime {
     })
     if (this.inFlight.has(key)) throw new Error('Execution already in progress for this command')
     this.inFlight.add(key)
-    try {
     const startedAt = new Date().toISOString()
     const agent = this.agents.get(request.agentId)
     const capability = this.capabilities.get(request.capabilityId)
@@ -226,6 +225,7 @@ export class SentinelRuntime {
       const execution = await this.civitas.execute(request, agent, capability)
       this.agents.setState(agent.id, 'ready')
       this.audit.append({ actor: agent.id, type: 'execution', message: `Completed ${capability.id}` })
+      this.inFlight.delete(key)
       return {
         requestId: request.requestId,
         agentId: request.agentId,
@@ -241,9 +241,6 @@ export class SentinelRuntime {
     } catch (error) {
       this.agents.setState(agent.id, 'failed')
       return this.finish(request, startedAt, 'failed', true, error instanceof Error ? error.message : 'Execution failed')
-    }
-    finally {
-      this.inFlight.delete(key)
     }
   }
 
@@ -265,7 +262,17 @@ export class SentinelRuntime {
     return this.civitas.approveApproval(approvalId)
   }
 
+  private release(request: ExecutionRequest) {
+    const key = JSON.stringify({
+      agentId: request.agentId,
+      capabilityId: request.capabilityId,
+      input: request.input,
+    })
+    this.inFlight.delete(key)
+  }
+
   private finish(request: ExecutionRequest, startedAt: string, status: ExecutionReceipt['status'], allowed: boolean, reason: string): ExecutionReceipt {
+    this.release(request)
     return {
       requestId: request.requestId,
       agentId: request.agentId,
