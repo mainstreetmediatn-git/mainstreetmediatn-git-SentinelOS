@@ -141,6 +141,10 @@ export class CivitasHttpAdapter implements CivitasAdapter {
     return Array.isArray(payload.automations) ? payload.automations as Array<Record<string, unknown>> : []
   }
 
+  async getHealth(): Promise<Record<string, unknown>> {
+    return this.get('/v1/health')
+  }
+
   async cancelJob(jobId: string): Promise<Record<string, unknown>> {
     const payload = await this.post(
       `/v1/jobs/${encodeURIComponent(jobId)}/cancel`,
