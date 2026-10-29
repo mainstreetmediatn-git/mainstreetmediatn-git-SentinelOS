@@ -28,6 +28,8 @@ export type AgentManifest = {
 
 export type ExecutionRequest = {
   requestId: string
+  tenantId?: string
+  approvalId?: string
   principal: string
   agentId: string
   capabilityId: string
@@ -38,6 +40,17 @@ export type ExecutionRequest = {
   }
 }
 
+export type ApprovalRecord = {
+  approvalId: string
+  requestId: string
+  tenantId?: string
+  principal: string
+  capabilityId: string
+  status: 'pending' | 'approved' | 'rejected' | 'expired'
+  approvedBy?: string | null
+  expiresAt?: string
+}
+
 export type ExecutionReceipt = {
   requestId: string
   agentId: string
@@ -46,6 +59,7 @@ export type ExecutionReceipt = {
   startedAt: string
   finishedAt: string
   result?: unknown
+  error?: string
   evidence: string[]
   actionsTaken: string[]
   policy: {
@@ -126,6 +140,12 @@ export class PolicyEngine {
 
 export interface CivitasAdapter {
   execute(request: ExecutionRequest, agent: AgentManifest, capability: Capability): Promise<{ result: unknown; evidence?: string[]; actionsTaken?: string[] }>
+  requestApproval?(request: ExecutionRequest, agent: AgentManifest, capability: Capability): Promise<ApprovalRecord>
+  getApproval?(approvalId: string): Promise<ApprovalRecord>
+  approveApproval?(approvalId: string): Promise<ApprovalRecord>
+  listAgents?(): Promise<AgentManifest[]>
+  listAuditEvents?(): Promise<AuditEvent[]>
+  listJobs?(): Promise<Array<Record<string, unknown>>>
 }
 
 export class LocalCivitasAdapter implements CivitasAdapter {
@@ -165,6 +185,8 @@ export class AuditStore {
 }
 
 export class SentinelRuntime {
+  private readonly inFlight = new Set<string>()
+
   constructor(
     readonly agents = new AgentRegistry(),
     readonly capabilities = new CapabilityRegistry(),
@@ -174,6 +196,14 @@ export class SentinelRuntime {
   ) {}
 
   async execute(request: ExecutionRequest, approved = false): Promise<ExecutionReceipt> {
+    const key = JSON.stringify({
+      agentId: request.agentId,
+      capabilityId: request.capabilityId,
+      input: request.input,
+    })
+    if (this.inFlight.has(key)) throw new Error('Execution already in progress for this command')
+    this.inFlight.add(key)
+    try {
     const startedAt = new Date().toISOString()
     const agent = this.agents.get(request.agentId)
     const capability = this.capabilities.get(request.capabilityId)
@@ -212,6 +242,27 @@ export class SentinelRuntime {
       this.agents.setState(agent.id, 'failed')
       return this.finish(request, startedAt, 'failed', true, error instanceof Error ? error.message : 'Execution failed')
     }
+    finally {
+      this.inFlight.delete(key)
+    }
+  }
+
+  async requestApproval(request: ExecutionRequest): Promise<ApprovalRecord> {
+    const agent = this.agents.get(request.agentId)
+    const capability = this.capabilities.get(request.capabilityId)
+    if (!agent || !capability) throw new Error('Cannot request approval for an unknown agent or capability')
+    if (!this.civitas.requestApproval) throw new Error('Civitas approval API is not configured')
+    return this.civitas.requestApproval(request, agent, capability)
+  }
+
+  async getApproval(approvalId: string): Promise<ApprovalRecord> {
+    if (!this.civitas.getApproval) throw new Error('Civitas approval API is not configured')
+    return this.civitas.getApproval(approvalId)
+  }
+
+  async approveApproval(approvalId: string): Promise<ApprovalRecord> {
+    if (!this.civitas.approveApproval) throw new Error('Civitas approval API is not configured')
+    return this.civitas.approveApproval(approvalId)
   }
 
   private finish(request: ExecutionRequest, startedAt: string, status: ExecutionReceipt['status'], allowed: boolean, reason: string): ExecutionReceipt {
@@ -224,6 +275,7 @@ export class SentinelRuntime {
       finishedAt: new Date().toISOString(),
       evidence: [],
       actionsTaken: [],
+      error: status === 'failed' ? reason : undefined,
       policy: { allowed, reason },
     }
   }
