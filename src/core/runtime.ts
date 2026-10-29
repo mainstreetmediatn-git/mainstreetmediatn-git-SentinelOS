@@ -3,6 +3,7 @@ import { CivitasHttpAdapter } from './civitas'
 type ViteEnv = {
   VITE_CIVITAS_URL?: string
   VITE_CIVITAS_API_TOKEN?: string
+  VITE_CIVITAS_AGENT_RUNTIME?: 'local' | 'openai'
 }
 
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
@@ -228,6 +229,11 @@ export class SentinelRuntime {
   }
 }
 
+export function defaultCommandCapability(): 'task.plan' | 'agent.run' {
+  const env = (import.meta as ImportMeta & { env?: ViteEnv }).env
+  return env?.VITE_CIVITAS_AGENT_RUNTIME === 'openai' ? 'agent.run' : 'task.plan'
+}
+
 function configuredCivitasAdapter(): CivitasAdapter {
   const env = (import.meta as ImportMeta & { env?: ViteEnv }).env
   if (!env?.VITE_CIVITAS_URL) return new LocalCivitasAdapter()
@@ -256,8 +262,8 @@ export function createDefaultSentinelRuntime(adapter?: CivitasAdapter) {
     version: '0.1.0',
     role: 'Plans, delegates, and supervises Sentinel work.',
     state: 'ready',
-    capabilities: ['task.plan'],
-    permissions: ['capability:task.plan'],
+    capabilities: ['task.plan', 'agent.run'],
+    permissions: ['capability:task.plan', 'capability:agent.run'],
   })
   runtime.agents.register({
     id: 'developer',
