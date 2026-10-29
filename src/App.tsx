@@ -163,6 +163,16 @@ export default function App() {
     }
   }
 
+  async function rejectWriteApproval() {
+    if (!approvalId) return
+    try {
+      const approval = await runtime.rejectApproval(approvalId)
+      setApprovalStatus(approval.status)
+    } catch (error) {
+      setApprovalStatus(error instanceof Error ? error.message : 'Rejection failed')
+    }
+  }
+
   async function runCommand() {
     const text = command.trim()
     if (!text || isRunning) return
@@ -260,7 +270,7 @@ export default function App() {
                 <div className="approval-tools">
                   <button className="ghost" onClick={requestWriteApproval} disabled={isRunning || !command.trim()}>Request write approval</button>
                   {approvalId && <span>Approval {approvalId.slice(0, 16)} · {approvalStatus}</span>}
-                  {approvalId && approvalStatus === 'pending' && <button className="ghost" onClick={approveWriteApproval}>Approve</button>}
+                  {approvalId && approvalStatus === 'pending' && <><button className="ghost" onClick={approveWriteApproval}>Approve</button><button className="ghost" onClick={rejectWriteApproval}>Reject</button></>}
                 </div>
                 <div className="suggestions">
                   <button onClick={() => setCommand('Scan my active projects and prioritize the next three actions')}>Prioritize projects</button>
