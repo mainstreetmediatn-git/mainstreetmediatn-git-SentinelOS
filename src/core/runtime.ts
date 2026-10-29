@@ -147,6 +147,9 @@ export interface CivitasAdapter {
   listAgents?(): Promise<AgentManifest[]>
   listAuditEvents?(): Promise<AuditEvent[]>
   listJobs?(): Promise<Array<Record<string, unknown>>>
+  listMemory?(): Promise<Array<Record<string, unknown>>>
+  listDevices?(): Promise<Array<Record<string, unknown>>>
+  listAutomations?(): Promise<Array<Record<string, unknown>>>
   cancelJob?(jobId: string): Promise<Record<string, unknown>>
 }
 
