@@ -88,4 +88,60 @@ describe('CivitasHttpAdapter', () => {
       },
     )).rejects.toThrow('approval required')
   })
+  it('supports durable approval lifecycle calls', async () => {
+    const calls: string[] = []
+    const adapter = new CivitasHttpAdapter({
+      baseUrl: 'http://civitas.local',
+      fetcher: async (input, init) => {
+        calls.push(`${init?.method} ${String(input)}`)
+        const path = String(input)
+        const approval = {
+          approvalId: 'approval-1',
+          requestId: 'req-1',
+          principal: 'owner',
+          capabilityId: 'repo.write',
+          status: path.endsWith('/approve') ? 'approved' : 'pending',
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => path === '/v1/approvals' || path.endsWith('/approve')
+            ? { approval }
+            : { approval },
+        } as Response
+      },
+    })
+
+    const request = {
+      requestId: 'req-1',
+      principal: 'owner',
+      agentId: 'developer',
+      capabilityId: 'repo.write',
+      input: { path: 'README.md' },
+    }
+    const agent = {
+      id: 'developer',
+      name: 'Developer',
+      version: '0.1.0',
+      role: 'Writes code',
+      state: 'ready' as const,
+      capabilities: ['repo.write'],
+      permissions: ['capability:repo.write'],
+    }
+    const capability = {
+      id: 'repo.write',
+      description: 'Write a repository',
+      risk: 'high' as const,
+      requiresApproval: true,
+    }
+
+    await expect(adapter.requestApproval?.(request, agent, capability)).resolves.toMatchObject({ status: 'pending' })
+    await expect(adapter.getApproval?.('approval-1')).resolves.toMatchObject({ approvalId: 'approval-1' })
+    await expect(adapter.approveApproval?.('approval-1')).resolves.toMatchObject({ status: 'approved' })
+    expect(calls).toEqual([
+      'POST http://civitas.local/v1/approvals',
+      'GET http://civitas.local/v1/approvals/approval-1',
+      'POST http://civitas.local/v1/approvals/approval-1/approve',
+    ])
+  })
 })
