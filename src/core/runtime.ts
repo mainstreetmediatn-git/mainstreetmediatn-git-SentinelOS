@@ -1,3 +1,10 @@
+import { CivitasHttpAdapter } from './civitas'
+
+type ViteEnv = {
+  VITE_CIVITAS_URL?: string
+  VITE_CIVITAS_API_TOKEN?: string
+}
+
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
 export type AgentState = 'ready' | 'planning' | 'executing' | 'waiting' | 'blocked' | 'needs_approval' | 'failed' | 'offline' | 'paused' | 'completed'
 
@@ -125,6 +132,8 @@ export class LocalCivitasAdapter implements CivitasAdapter {
     return {
       result: {
         accepted: true,
+        simulated: true,
+        mode: 'local-development',
         delegatedBy: 'civitas',
         agent: agent.id,
         capability: capability.id,
@@ -219,8 +228,22 @@ export class SentinelRuntime {
   }
 }
 
-export function createDefaultSentinelRuntime() {
-  const runtime = new SentinelRuntime()
+function configuredCivitasAdapter(): CivitasAdapter {
+  const env = (import.meta as ImportMeta & { env?: ViteEnv }).env
+  if (!env?.VITE_CIVITAS_URL) return new LocalCivitasAdapter()
+  return new CivitasHttpAdapter({
+    baseUrl: env.VITE_CIVITAS_URL,
+    token: env.VITE_CIVITAS_API_TOKEN,
+  })
+}
+
+export function createDefaultSentinelRuntime(adapter?: CivitasAdapter) {
+  const runtime = new SentinelRuntime(
+    undefined,
+    undefined,
+    undefined,
+    adapter ?? configuredCivitasAdapter(),
+  )
 
   runtime.capabilities.register({ id: 'task.plan', description: 'Plan and decompose a user goal.', risk: 'low', requiresApproval: false })
   runtime.capabilities.register({ id: 'repo.write', description: 'Write approved changes to a repository.', risk: 'high', requiresApproval: true })
