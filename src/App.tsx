@@ -102,6 +102,7 @@ export default function App() {
   const [memoryRecords, setMemoryRecords] = useState<Array<Record<string, unknown>>>([])
   const [devices, setDevices] = useState<Array<Record<string, unknown>>>([])
   const [automations, setAutomations] = useState<Array<Record<string, unknown>>>([])
+  const [health, setHealth] = useState<Record<string, unknown>>({ status: 'local-development' })
   const [jobSearch, setJobSearch] = useState('')
   const runtime = useMemo(() => createDefaultSentinelRuntime(), [])
 
@@ -117,13 +118,14 @@ export default function App() {
     async function syncControlPlane() {
       try {
         const adapter = runtime.civitas
-        const [remoteAgents, remoteEvents, remoteJobs, remoteMemory, remoteDevices, remoteAutomations] = await Promise.all([
+        const [remoteAgents, remoteEvents, remoteJobs, remoteMemory, remoteDevices, remoteAutomations, remoteHealth] = await Promise.all([
           adapter.listAgents?.(),
           adapter.listAuditEvents?.(),
           adapter.listJobs?.(),
           adapter.listMemory?.(),
           adapter.listDevices?.(),
           adapter.listAutomations?.(),
+          adapter.getHealth?.(),
         ])
         if (cancelled) return
         if (remoteAgents) {
@@ -144,6 +146,7 @@ export default function App() {
         if (remoteMemory) setMemoryRecords(remoteMemory)
         if (remoteDevices) setDevices(remoteDevices)
         if (remoteAutomations) setAutomations(remoteAutomations)
+        if (remoteHealth) setHealth(remoteHealth)
         setSyncError(null)
       } catch (error) {
         if (!cancelled) setSyncError(error instanceof Error ? error.message : 'Control plane sync failed')
@@ -278,9 +281,9 @@ export default function App() {
 
         <div className="sidebar-bottom">
           <div className="system-health">
-            <div className="health-line"><span><Radio size={14} /> Core status</span><b>Healthy</b></div>
+            <div className="health-line"><span><Radio size={14} /> Core status</span><b>{String(health.status ?? 'unknown')}</b></div>
             <div className="health-meter"><i /></div>
-            <small>6 agents connected · 12 capabilities</small>
+            <small>{agents.length} agents connected · {jobs.length} durable jobs</small>
           </div>
           <div className="profile-row"><div className="avatar">S</div><div><strong>Local Authority</strong><span>Owner / Admin</span></div><ChevronRight size={16} /></div>
         </div>
@@ -334,8 +337,8 @@ export default function App() {
               <section className="metric-grid">
                 <div className="metric glass"><span>AGENTS</span><strong>{agents.length}</strong><small>{working} actively working</small><Bot size={22}/></div>
                 <div className="metric glass"><span>CAPABILITIES</span><strong>12</strong><small>Across 5 domains</small><Layers3 size={22}/></div>
-                <div className="metric glass"><span>AUTOMATIONS</span><strong>7</strong><small>5 healthy · 2 paused</small><Workflow size={22}/></div>
-                <div className="metric glass"><span>MEMORY</span><strong>84%</strong><small>Context relevance</small><Database size={22}/></div>
+                <div className="metric glass"><span>AUTOMATIONS</span><strong>{automations.length}</strong><small>{automations.length ? 'live records' : 'store not configured'}</small><Workflow size={22}/></div>
+                <div className="metric glass"><span>MEMORY</span><strong>{memoryRecords.length}</strong><small>durable records</small><Database size={22}/></div>
               </section>
 
               <section className="content-grid">
