@@ -1,6 +1,7 @@
 import {
   type AgentManifest,
   type AuditEvent,
+  AuditStore,
   type Capability,
   type ExecutionReceipt,
   type ExecutionRequest,
@@ -16,6 +17,14 @@ import {
   type PairedDevice,
   type UserIdentity,
 } from './auth'
+import {
+  HttpAuditPersistence,
+  HttpAuthGateway,
+  HttpDevicePairingGateway,
+  SentinelHttpClient,
+  type RemoteAuthGateway,
+  type RemoteDeviceGateway,
+} from './remote'
 
 export type SentinelState = {
   agents: AgentManifest[]
@@ -27,11 +36,18 @@ export type SentinelState = {
   devices: PairedDevice[]
 }
 
+export type SentinelRemoteServices = {
+  auth?: RemoteAuthGateway
+  devices?: RemoteDeviceGateway
+}
+
 export type SentinelCoreOptions = {
   runtime?: SentinelRuntime
   auth?: LocalAuthService
   pairing?: DevicePairingService
   civitasEndpoint?: string
+  apiEndpoint?: string
+  remote?: SentinelRemoteServices
 }
 
 export class SentinelCoreApi {
@@ -41,6 +57,7 @@ export class SentinelCoreApi {
     readonly runtime = createDefaultSentinelRuntime({ civitas: createCivitasAdapter() }),
     readonly auth = new LocalAuthService(),
     readonly pairing = new DevicePairingService(),
+    readonly remote?: SentinelRemoteServices,
   ) {
     if (!this.auth.getSession()) this.auth.signIn()
   }
@@ -57,6 +74,27 @@ export class SentinelCoreApi {
   subscribe(listener: (state: SentinelState) => void) {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  async hydrateRemote() {
+    if (this.remote?.auth) {
+      try {
+        const session = await this.remote.auth.getSession()
+        if (session) this.auth.restore(session)
+      } catch {
+        // Local authority remains available when the remote identity service is offline.
+      }
+    }
+
+    if (this.remote?.devices) {
+      try {
+        this.pairing.replace(await this.remote.devices.list())
+      } catch {
+        // Local paired devices remain available when the remote device service is offline.
+      }
+    }
+
+    this.emit()
   }
 
   async registerAgent(agent: AgentManifest) {
@@ -99,9 +137,13 @@ export class SentinelCoreApi {
     return approval
   }
 
-  createPairingChallenge(label: string, capabilities?: string[]) {
+  async createPairingChallenge(label: string, capabilities?: string[]) {
     const session = this.requireSession()
-    const challenge = this.pairing.createChallenge(label, capabilities)
+    const requestedCapabilities = capabilities ?? ['device.execute', 'device.status']
+    const challenge = this.remote?.devices
+      ? await this.remote.devices.createChallenge(label, requestedCapabilities)
+      : this.pairing.createChallenge(label, requestedCapabilities)
+
     this.runtime.audit.append({
       actor: session.user.id,
       type: 'device',
@@ -112,9 +154,16 @@ export class SentinelCoreApi {
     return challenge
   }
 
-  pairDevice(challenge: PairingChallenge, code: string) {
+  async pairDevice(challenge: PairingChallenge, code: string) {
     const session = this.requireSession()
-    const device = this.pairing.pair(challenge.id, code)
+    const device = this.remote?.devices
+      ? await this.remote.devices.pair(challenge.id, code)
+      : this.pairing.pair(challenge.id, code)
+
+    if (this.remote?.devices) {
+      this.pairing.replace([...this.pairing.list().filter((candidate) => candidate.id !== device.id), device])
+    }
+
     this.runtime.audit.append({
       actor: session.user.id,
       type: 'device',
@@ -125,9 +174,16 @@ export class SentinelCoreApi {
     return device
   }
 
-  revokeDevice(deviceId: string) {
+  async revokeDevice(deviceId: string) {
     const session = this.requireSession()
-    const device = this.pairing.revoke(deviceId)
+    const device = this.remote?.devices
+      ? await this.remote.devices.revoke(deviceId)
+      : this.pairing.revoke(deviceId)
+
+    if (this.remote?.devices) {
+      this.pairing.replace(this.pairing.list().map((candidate) => candidate.id === device.id ? device : candidate))
+    }
+
     this.runtime.audit.append({
       actor: session.user.id,
       type: 'device',
@@ -138,21 +194,31 @@ export class SentinelCoreApi {
     return device
   }
 
-  signIn(user?: UserIdentity) {
-    const session = this.auth.signIn(user)
+  async signIn(user: UserIdentity = { id: 'owner', name: 'Local Authority', role: 'owner' }) {
+    const session = this.remote?.auth
+      ? await this.remote.auth.signIn(user)
+      : this.auth.signIn(user)
+    this.auth.restore(session)
     this.runtime.audit.append({
       actor: session.user.id,
       type: 'auth',
       message: 'Authenticated with the local authority',
-      details: { sessionId: session.sessionId },
+      details: { sessionId: session.sessionId, remote: Boolean(this.remote?.auth) },
     })
     this.emit()
     return session
   }
 
-  signOut() {
+  async signOut() {
     const session = this.auth.getSession()
     if (session) {
+      if (this.remote?.auth) {
+        try {
+          await this.remote.auth.signOut()
+        } catch {
+          // Continue clearing the local session if the remote sign-out endpoint is unavailable.
+        }
+      }
       this.runtime.audit.append({
         actor: session.user.id,
         type: 'auth',
@@ -177,8 +243,31 @@ export class SentinelCoreApi {
 }
 
 export function createSentinelCore(options: SentinelCoreOptions = {}) {
-  const runtime = options.runtime ?? createDefaultSentinelRuntime({
-    civitas: createCivitasAdapter(options.civitasEndpoint),
-  })
-  return new SentinelCoreApi(runtime, options.auth, options.pairing)
+  const auth = options.auth ?? new LocalAuthService()
+  const pairing = options.pairing ?? new DevicePairingService()
+  const endpoint = options.apiEndpoint
+  let remote = options.remote
+  let audit: AuditStore | undefined
+  let runtime = options.runtime
+
+  if (endpoint && !remote) {
+    const client = new SentinelHttpClient({
+      endpoint,
+      token: () => auth.getSession()?.sessionId ?? null,
+    })
+    remote = {
+      auth: new HttpAuthGateway(client),
+      devices: new HttpDevicePairingGateway(client),
+    }
+    audit = new AuditStore(new HttpAuditPersistence(client))
+  }
+
+  if (!runtime) {
+    runtime = createDefaultSentinelRuntime({
+      civitas: createCivitasAdapter(options.civitasEndpoint),
+      audit,
+    })
+  }
+
+  return new SentinelCoreApi(runtime, auth, pairing, remote)
 }
