@@ -118,16 +118,20 @@ function DevicesPanel({ core, state }: { core: SentinelCoreApi; state: SentinelS
   const [label, setLabel] = useState('New Sentinel device')
   const [error, setError] = useState('')
 
-  function createChallenge() {
+  async function createChallenge() {
     setError('')
-    setChallenge(core.createPairingChallenge(label, ['device.execute', 'device.status']))
-    setCode('')
+    try {
+      setChallenge(await core.createPairingChallenge(label, ['device.execute', 'device.status']))
+      setCode('')
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Pairing challenge failed.')
+    }
   }
 
-  function pairDevice() {
+  async function pairDevice() {
     if (!challenge) return
     try {
-      core.pairDevice(challenge, code)
+      await core.pairDevice(challenge, code)
       setChallenge(null)
       setCode('')
       setError('')
@@ -145,13 +149,13 @@ function DevicesPanel({ core, state }: { core: SentinelCoreApi; state: SentinelS
         <div className="panel glass pair-card">
           <div className="panel-title"><div><Radio size={18} /><strong>Pair a device</strong></div><span>10 min challenge</span></div>
           <label>Device label<input value={label} onChange={(event) => setLabel(event.target.value)} /></label>
-          <button className="primary" onClick={createChallenge}><Plus size={16} /> Create pairing challenge</button>
+          <button className="primary" onClick={() => void createChallenge()}><Plus size={16} /> Create pairing challenge</button>
           {challenge && (
             <div className="pairing-challenge">
               <span>Enter this code on the device</span>
               <strong>{challenge.code}</strong>
               <small>Challenge {challenge.id.slice(0, 16)}…</small>
-              <div className="pair-code-row"><input value={code} onChange={(event) => setCode(event.target.value)} placeholder="6-digit code" inputMode="numeric" /><button className="approval-approve" onClick={pairDevice}>Pair</button></div>
+              <div className="pair-code-row"><input value={code} onChange={(event) => setCode(event.target.value)} placeholder="6-digit code" inputMode="numeric" /><button className="approval-approve" onClick={() => void pairDevice()}>Pair</button></div>
             </div>
           )}
           {error && <p className="inline-error">{error}</p>}
@@ -163,7 +167,7 @@ function DevicesPanel({ core, state }: { core: SentinelCoreApi; state: SentinelS
             <div className="device-row" key={device.id}>
               <div className="device-icon"><Cpu size={16} /></div>
               <div><strong>{device.label}</strong><span>{device.capabilities.join(' · ')}</span></div>
-              <div className="device-state"><StatusDot status={device.status === 'paired' ? 'online' : 'idle'} />{device.status}<button onClick={() => core.revokeDevice(device.id)}>Revoke</button></div>
+              <div className="device-state"><StatusDot status={device.status === 'paired' ? 'online' : 'idle'} />{device.status}<button onClick={() => void core.revokeDevice(device.id)}>Revoke</button></div>
             </div>
           ))}
         </div>
@@ -179,7 +183,7 @@ function SettingsPanel({ core, state }: { core: SentinelCoreApi; state: Sentinel
       <div className="settings-grid">
         <div className="panel glass setting-card">
           <div className="panel-title"><div><ShieldCheck size={18} /><strong>Authentication</strong></div><span className={state.session ? 'healthy-label' : 'warning-label'}>{state.session ? 'authenticated' : 'signed out'}</span></div>
-          {state.session ? <><h3>{state.session.user.name}</h3><p>{state.session.user.role} · session expires {new Date(state.session.expiresAt).toLocaleTimeString()}</p><button className="ghost wide-button" onClick={() => core.signOut()}>Sign out</button></> : <button className="primary" onClick={() => core.signIn()}>Sign in as local authority</button>}
+          {state.session ? <><h3>{state.session.user.name}</h3><p>{state.session.user.role} · session expires {new Date(state.session.expiresAt).toLocaleTimeString()}</p><button className="ghost wide-button" onClick={() => void core.signOut()}>Sign out</button></> : <button className="primary" onClick={() => void core.signIn()}>Sign in as local authority</button>}
         </div>
         <div className="panel glass setting-card">
           <div className="panel-title"><div><ShieldCheck size={18} /><strong>Policy engine</strong></div><span className="healthy-label">enforced</span></div>
@@ -193,7 +197,7 @@ function SettingsPanel({ core, state }: { core: SentinelCoreApi; state: Sentinel
 }
 
 export default function App() {
-  const core = useMemo(() => createSentinelCore({ civitasEndpoint: import.meta.env.VITE_CIVITAS_URL }), [])
+  const core = useMemo(() => createSentinelCore({ civitasEndpoint: import.meta.env.VITE_CIVITAS_URL, apiEndpoint: import.meta.env.VITE_SENTINEL_API_URL }), [])
   const [state, setState] = useState<SentinelState>(() => core.getState())
   const [active, setActive] = useState<NavKey>('home')
   const [mobileNav, setMobileNav] = useState(false)
@@ -201,7 +205,11 @@ export default function App() {
   const [lastReceipt, setLastReceipt] = useState<ExecutionReceipt | null>(null)
   const [commandError, setCommandError] = useState('')
 
-  useEffect(() => core.subscribe(setState), [core])
+  useEffect(() => {
+    const unsubscribe = core.subscribe(setState)
+    void core.hydrateRemote()
+    return unsubscribe
+  }, [core])
 
   const agents = state.agents
   const working = useMemo(() => agents.filter((agent) => uiStatus(agent.state) === 'working').length, [agents])
