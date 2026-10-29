@@ -98,7 +98,9 @@ export class HttpDevicePairingGateway implements RemoteDeviceGateway {
       '/v1/devices/pair/challenge',
       { label, capabilities },
     )
-    return isChallengeEnvelope(response) ? response.challenge : response
+    const challenge = isChallengeEnvelope(response) ? response.challenge : response
+    if (!challenge) throw new Error('Sentinel API did not return a pairing challenge.')
+    return challenge
   }
 
   async pair(challengeId: string, code: string) {
@@ -106,7 +108,9 @@ export class HttpDevicePairingGateway implements RemoteDeviceGateway {
       '/v1/devices/pair',
       { challengeId, code },
     )
-    return isDeviceEnvelope(response) ? response.device : response
+    const device = isDeviceEnvelope(response) ? response.device : response
+    if (!device) throw new Error('Sentinel API did not return a paired device.')
+    return device
   }
 
   async revoke(deviceId: string) {
