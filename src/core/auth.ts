@@ -92,6 +92,15 @@ export class LocalAuthService {
     return this.getSession()!
   }
 
+  restore(session: AuthSession) {
+    this.session = {
+      ...session,
+      user: { ...session.user },
+    }
+    this.save()
+    return this.getSession()!
+  }
+
   signOut() {
     this.session = null
     try {
@@ -184,6 +193,12 @@ export class DevicePairingService {
     device.lastSeenAt = new Date().toISOString()
     this.save()
     return { ...device, capabilities: [...device.capabilities] }
+  }
+
+  replace(devices: PairedDevice[]) {
+    this.devices = devices.map((device) => ({ ...device, capabilities: [...device.capabilities] }))
+    this.save()
+    return this.list()
   }
 
   list() {
