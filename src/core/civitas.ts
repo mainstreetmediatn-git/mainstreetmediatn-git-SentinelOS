@@ -126,6 +126,21 @@ export class CivitasHttpAdapter implements CivitasAdapter {
     return Array.isArray(payload.jobs) ? payload.jobs as Array<Record<string, unknown>> : []
   }
 
+  async listMemory(): Promise<Array<Record<string, unknown>>> {
+    const payload = await this.get('/v1/memory')
+    return Array.isArray(payload.memory) ? payload.memory as Array<Record<string, unknown>> : []
+  }
+
+  async listDevices(): Promise<Array<Record<string, unknown>>> {
+    const payload = await this.get('/v1/devices')
+    return Array.isArray(payload.devices) ? payload.devices as Array<Record<string, unknown>> : []
+  }
+
+  async listAutomations(): Promise<Array<Record<string, unknown>>> {
+    const payload = await this.get('/v1/automations')
+    return Array.isArray(payload.automations) ? payload.automations as Array<Record<string, unknown>> : []
+  }
+
   async cancelJob(jobId: string): Promise<Record<string, unknown>> {
     const payload = await this.post(
       `/v1/jobs/${encodeURIComponent(jobId)}/cancel`,
