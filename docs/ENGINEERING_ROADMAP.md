@@ -12,10 +12,10 @@ This roadmap tracks the work after the initial Sentinel Core foundation.
 
 ## Next engineering steps
 
-- [ ] Add production transport adapters for identity, audit events, and device pairing behind explicit HTTP contracts.
-- [ ] Add remote session/device hydration with local fallback for offline development.
-- [ ] Replace the local audit-only path with a durable outbox that retries remote event delivery without losing the local trail.
-- [ ] Add contract tests for remote payloads and failure behavior.
+- [x] Add production transport adapters for identity, audit events, and device pairing behind explicit HTTP contracts.
+- [x] Add remote session/device hydration with local fallback for offline development.
+- [x] Replace the local audit-only path with a durable outbox that retries remote event delivery without losing the local trail.
+- [x] Add contract tests for remote payloads and failure behavior.
 - [ ] Connect deployment secrets and the Civitas/API endpoints in the hosting environment.
 - [ ] Add end-to-end checks for approval, execution receipt, sign-out, and device revocation flows.
 
