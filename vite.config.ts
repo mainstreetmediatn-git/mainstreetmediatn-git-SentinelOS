@@ -8,7 +8,7 @@ export default defineConfig({
     proxy: {
       '/api/civitas': {
         target: process.env.CIVITAS_URL ?? 'http://127.0.0.1:8788',
-        rewrite: (path) => path.replace(/^\\/api\\/civitas/, ''),
+        rewrite: (path) => path.replace(/^\/api\/civitas/, ''),
         changeOrigin: true,
         configure: (proxy) => {
           proxy.on('proxyReq', (request) => {
