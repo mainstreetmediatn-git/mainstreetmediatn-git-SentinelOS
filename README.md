@@ -40,10 +40,12 @@ Agents + Capabilities + Devices
 Set `VITE_CIVITAS_URL` to make the Command Center submit typed execution envelopes to Civitas. Without it, the app uses an explicitly labeled local-development adapter so local UI work remains runnable without a backend.
 
 ```bash
-VITE_CIVITAS_URL=http://127.0.0.1:8788 npm run dev
+CIVITAS_URL=http://127.0.0.1:8788 CIVITAS_API_TOKEN=secret npm run dev
+# or run the standalone gateway:
+CIVITAS_URL=http://127.0.0.1:8788 CIVITAS_API_TOKEN=secret npm run bff
 ```
 
-For local-only testing, a bearer token may be provided through `VITE_CIVITAS_API_TOKEN`. Do not ship a bearer token in a browser bundle; production deployments should use an authenticated backend session or BFF that keeps credentials server-side.
+For local development, the Vite proxy can attach `CIVITAS_API_TOKEN` from the Node process environment. The browser never receives that credential. For deployment, run `npm run bff` behind the authenticated Sentinel session/identity layer and set `CIVITAS_URL` plus server-only `CIVITAS_API_TOKEN`; do not define any `VITE_*TOKEN` value.
 
 The Command Center now sends `task.plan` requests and displays the returned receipt status. Configure Civitas with `CIVITAS_AGENT_RUNTIME=openai` and the optional `civitas[agent-runtime]` dependency to enable the OpenAI Agents API-backed `agent.run` capability.
 
