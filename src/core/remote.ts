@@ -117,7 +117,9 @@ export class HttpDevicePairingGateway implements RemoteDeviceGateway {
     const response = await this.client.post<{ device?: PairedDevice } | PairedDevice>(
       '/v1/devices/' + encodeURIComponent(deviceId) + '/revoke',
     )
-    return isDeviceEnvelope(response) ? response.device : response
+    const device = isDeviceEnvelope(response) ? response.device : response
+    if (!device) throw new Error('Sentinel API did not return a paired device.')
+    return device
   }
 }
 
