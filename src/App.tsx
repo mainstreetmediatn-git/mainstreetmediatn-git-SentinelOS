@@ -94,6 +94,8 @@ export default function App() {
   const [events, setEvents] = useState(activity)
   const [isRunning, setIsRunning] = useState(false)
   const [approvalId, setApprovalId] = useState('')
+  const [approvalRequestId, setApprovalRequestId] = useState('')
+  const [approvalGoal, setApprovalGoal] = useState('')
   const [approvalStatus, setApprovalStatus] = useState<string | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
   const runtime = useMemo(() => createDefaultSentinelRuntime(), [])
@@ -146,6 +148,8 @@ export default function App() {
       }
       const approval = await runtime.requestApproval(request)
       setApprovalId(approval.approvalId)
+      setApprovalRequestId(approval.requestId)
+      setApprovalGoal(text)
       setApprovalStatus(approval.status)
       setEvents((prev) => [['Sentinel Guard', `Approval requested: ${approval.approvalId}`, 'now'], ...prev].slice(0, 8))
     } catch (error) {
@@ -170,6 +174,25 @@ export default function App() {
       setApprovalStatus(approval.status)
     } catch (error) {
       setApprovalStatus(error instanceof Error ? error.message : 'Rejection failed')
+    }
+  }
+
+  async function resumeApprovedWork() {
+    if (!approvalId || !approvalRequestId || !approvalGoal) return
+    try {
+      const receipt = await runtime.execute({
+        requestId: approvalRequestId,
+        approvalId,
+        principal: 'owner',
+        agentId: 'developer',
+        capabilityId: 'repo.write',
+        input: { goal: approvalGoal },
+      }, true)
+      const detail = receipt.status === 'completed' ? 'completed' : receipt.error ?? receipt.policy.reason
+      setEvents((prev) => [['Developer', `${receipt.status} · ${detail}`, 'now'], ...prev].slice(0, 8))
+      setApprovalStatus(receipt.status)
+    } catch (error) {
+      setApprovalStatus(error instanceof Error ? error.message : 'Approved work failed')
     }
   }
 
@@ -271,6 +294,7 @@ export default function App() {
                   <button className="ghost" onClick={requestWriteApproval} disabled={isRunning || !command.trim()}>Request write approval</button>
                   {approvalId && <span>Approval {approvalId.slice(0, 16)} · {approvalStatus}</span>}
                   {approvalId && approvalStatus === 'pending' && <><button className="ghost" onClick={approveWriteApproval}>Approve</button><button className="ghost" onClick={rejectWriteApproval}>Reject</button></>}
+                  {approvalId && approvalStatus === 'approved' && <button className="ghost" onClick={resumeApprovedWork}>Resume approved work</button>}
                 </div>
                 <div className="suggestions">
                   <button onClick={() => setCommand('Scan my active projects and prioritize the next three actions')}>Prioritize projects</button>
