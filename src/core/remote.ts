@@ -119,11 +119,15 @@ export class HttpDevicePairingGateway implements RemoteDeviceGateway {
 
 export class HttpAuditPersistence implements AuditPersistence {
   private lastError: string | undefined
+  private pending: AuditEvent[]
 
   constructor(
     private readonly client: SentinelHttpClient,
     private readonly local: AuditPersistence = new LocalStorageAuditPersistence(),
-  ) {}
+    private readonly outboxKey = 'sentinel.audit.outbox.v1',
+  ) {
+    this.pending = this.loadPending()
+  }
 
   load() {
     return this.local.load()
@@ -132,14 +136,53 @@ export class HttpAuditPersistence implements AuditPersistence {
   save(events: AuditEvent[]) {
     this.local.save(events)
     const newest = events[0]
-    if (!newest) return
-    void this.client.post('/v1/audit/events', { events: [newest] }).catch((error) => {
+    if (!newest || this.pending.some((event) => event.id === newest.id)) return
+    this.pending = [newest, ...this.pending]
+    this.persistPending()
+    void this.flush()
+  }
+
+  async flush() {
+    if (!this.pending.length) return
+    const batch = [...this.pending]
+    try {
+      await this.client.post('/v1/audit/events', { events: batch })
+      this.pending = this.pending.filter((event) => !batch.some((sent) => sent.id === event.id))
+      this.persistPending()
+      this.lastError = undefined
+    } catch (error) {
       this.lastError = error instanceof Error ? error.message : 'Remote audit delivery failed.'
-    })
+      this.persistPending()
+    }
+  }
+
+  getPendingCount() {
+    return this.pending.length
   }
 
   getLastError() {
     return this.lastError
+  }
+
+  private loadPending() {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return []
+      const raw = window.localStorage.getItem(this.outboxKey)
+      const events = raw ? JSON.parse(raw) as AuditEvent[] : []
+      return Array.isArray(events) ? events : []
+    } catch {
+      return []
+    }
+  }
+
+  private persistPending() {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(this.outboxKey, JSON.stringify(this.pending))
+      }
+    } catch {
+      // The in-memory queue remains available for the current session.
+    }
   }
 }
 
