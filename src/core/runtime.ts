@@ -307,10 +307,10 @@ export function defaultCommandCapability(): 'task.plan' | 'agent.run' {
 
 function configuredCivitasAdapter(): CivitasAdapter {
   const env = (import.meta as ImportMeta & { env?: ViteEnv }).env
-  if (!env?.VITE_CIVITAS_URL) return new LocalCivitasAdapter()
+  if (!env?.VITE_CIVITAS_URL && !env?.VITE_CIVITAS_AGENT_RUNTIME) return new LocalCivitasAdapter()
   return new CivitasHttpAdapter({
-    baseUrl: env.VITE_CIVITAS_URL,
-    token: env.VITE_CIVITAS_API_TOKEN,
+    baseUrl: env.VITE_CIVITAS_URL ?? '/api/civitas',
+    token: import.meta.env.DEV ? env.VITE_CIVITAS_API_TOKEN : undefined,
   })
 }
 
