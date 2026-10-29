@@ -25,6 +25,7 @@ import {
   X,
   Zap,
 } from 'lucide-react'
+import { createDefaultSentinelRuntime } from './core/runtime'
 
 type NavKey = 'home' | 'agents' | 'flows' | 'memory' | 'devices' | 'activity' | 'settings'
 type AgentStatus = 'online' | 'working' | 'idle'
@@ -85,15 +86,37 @@ export default function App() {
   const [command, setCommand] = useState('')
   const [agents, setAgents] = useState(initialAgents)
   const [events, setEvents] = useState(activity)
+  const runtime = useMemo(() => createDefaultSentinelRuntime(), [])
 
   const working = useMemo(() => agents.filter((a) => a.status === 'working').length, [agents])
 
-  function runCommand() {
+  async function runCommand() {
     const text = command.trim()
     if (!text) return
-    setEvents((prev) => [['Orchestrator', `Accepted command: “${text}”`, 'now'], ...prev].slice(0, 8))
+    const requestId = globalThis.crypto?.randomUUID?.() ?? `req-${Date.now()}`
+    setEvents((prev) => [['Orchestrator', `Submitted command: “${text}”`, 'now'], ...prev].slice(0, 8))
     setAgents((prev) => prev.map((a) => a.id === 'orchestrator' ? { ...a, status: 'working', tasks: a.tasks + 1 } : a))
-    setCommand('')
+
+    try {
+      const receipt = await runtime.execute({
+        requestId,
+        principal: 'owner',
+        agentId: 'orchestrator',
+        capabilityId: 'task.plan',
+        input: { goal: text },
+      })
+      const result = receipt.result && typeof receipt.result === 'object'
+        ? receipt.result as { status?: string; mode?: string }
+        : {}
+      const mode = result.mode === 'local-development' ? ' (local development adapter)' : ''
+      setEvents((prev) => [['Orchestrator', `${receipt.status} · ${result.status ?? 'receipt recorded'}${mode}`, 'now'], ...prev].slice(0, 8))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Execution failed'
+      setEvents((prev) => [['Sentinel Guard', `Execution failed: ${message}`, 'now'], ...prev].slice(0, 8))
+    } finally {
+      setAgents((prev) => prev.map((a) => a.id === 'orchestrator' ? { ...a, status: 'online' } : a))
+      setCommand('')
+    }
   }
 
   return (
