@@ -6,6 +6,9 @@ const civitasToken = process.env.CIVITAS_API_TOKEN
 const maxBodyBytes = Number(process.env.SENTINEL_MAX_BODY_BYTES ?? 1_048_576)
 const timeoutMs = Number(process.env.SENTINEL_BFF_TIMEOUT_MS ?? 10_000)
 const prefix = '/api/civitas'
+const production = process.env.NODE_ENV === 'production'
+const identityHeader = (process.env.SENTINEL_IDENTITY_HEADER ?? 'x-forwarded-user').toLowerCase()
+const forwardedAuthorizationHeader = (process.env.SENTINEL_AUTHORIZATION_HEADER ?? 'x-forwarded-authorization').toLowerCase()
 
 function send(response, status, body, headers = {}) {
   response.writeHead(status, {
@@ -40,13 +43,22 @@ const server = createServer(async (request, response) => {
   if (!upstreamPath.startsWith('/v1/')) return send(response, 404, { error: 'not found' })
 
   try {
+    const identity = request.headers[identityHeader]
+    const forwardedAuthorization = request.headers[forwardedAuthorizationHeader]
+    if (production && (!identity || !forwardedAuthorization)) {
+      return send(response, 401, { error: 'authenticated Sentinel session required' })
+    }
     const body = request.method === 'POST' ? await readBody(request) : undefined
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
       const headers = { accept: 'application/json' }
       if (body) headers['content-type'] = request.headers['content-type'] ?? 'application/json'
-      if (civitasToken) headers.authorization = 'Bearer ' + civitasToken
+      if (typeof forwardedAuthorization === 'string' && forwardedAuthorization) {
+        headers.authorization = forwardedAuthorization
+      } else if (civitasToken) {
+        headers.authorization = 'Bearer ' + civitasToken
+      }
       const upstream = await fetch(new URL(upstreamPath + requestUrl.search, civitasUrl), {
         method: request.method,
         headers,
