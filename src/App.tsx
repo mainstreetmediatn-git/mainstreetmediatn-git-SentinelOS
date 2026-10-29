@@ -153,7 +153,11 @@ export default function App() {
       }
     }
     void syncControlPlane()
-    return () => { cancelled = true }
+    const timer = window.setInterval(() => { void syncControlPlane() }, 5000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
   }, [runtime])
 
   async function requestWriteApproval() {
