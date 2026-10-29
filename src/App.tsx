@@ -99,6 +99,9 @@ export default function App() {
   const [approvalStatus, setApprovalStatus] = useState<string | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [jobs, setJobs] = useState<Array<Record<string, unknown>>>([])
+  const [memoryRecords, setMemoryRecords] = useState<Array<Record<string, unknown>>>([])
+  const [devices, setDevices] = useState<Array<Record<string, unknown>>>([])
+  const [automations, setAutomations] = useState<Array<Record<string, unknown>>>([])
   const [jobSearch, setJobSearch] = useState('')
   const runtime = useMemo(() => createDefaultSentinelRuntime(), [])
 
@@ -114,13 +117,16 @@ export default function App() {
     async function syncControlPlane() {
       try {
         const adapter = runtime.civitas
-        const [remoteAgents, remoteEvents, remoteJobs] = await Promise.all([
+        const [remoteAgents, remoteEvents, remoteJobs, remoteMemory, remoteDevices, remoteAutomations] = await Promise.all([
           adapter.listAgents?.(),
           adapter.listAuditEvents?.(),
           adapter.listJobs?.(),
+          adapter.listMemory?.(),
+          adapter.listDevices?.(),
+          adapter.listAutomations?.(),
         ])
         if (cancelled) return
-        if (remoteAgents?.length) {
+        if (remoteAgents) {
           const nextAgents: Agent[] = remoteAgents.map((agent: AgentManifest, index: number) => ({
             id: agent.id,
             name: agent.name,
@@ -135,6 +141,9 @@ export default function App() {
           setEvents(remoteEvents.map((event: AuditEvent) => [event.actor, event.message, event.at]))
         }
         if (remoteJobs) setJobs(remoteJobs)
+        if (remoteMemory) setMemoryRecords(remoteMemory)
+        if (remoteDevices) setDevices(remoteDevices)
+        if (remoteAutomations) setAutomations(remoteAutomations)
         setSyncError(null)
       } catch (error) {
         if (!cancelled) setSyncError(error instanceof Error ? error.message : 'Control plane sync failed')
@@ -369,9 +378,24 @@ export default function App() {
             </section>
           )}
 
-          {active === 'flows' && <EmptyPanel title="Automation Studio" copy="Build event-driven and scheduled workflows that connect Sentinel capabilities without hard-wiring agents together." icon={Workflow} />}
-          {active === 'memory' && <EmptyPanel title="Sentinel Memory" copy="Search project context, episodic history, knowledge, and durable system state from one retrieval layer." icon={Brain} />}
-          {active === 'devices' && <EmptyPanel title="Device Fabric" copy="Pair phones, computers, sensors, and local runtimes with explicit capability permissions." icon={Cpu} />}
+          {active === 'flows' && (
+            <section>
+              <div className="section-head"><div><div className="eyebrow"><Workflow size={14}/> AUTOMATIONS</div><h1>Automation Studio</h1><p>Live persisted automations from Civitas.</p></div></div>
+              <div className="panel glass full">{automations.length === 0 ? <p>No automation store is configured.</p> : automations.map((automation, index) => <div className="agent-row" key={String(automation.id ?? index)}><div><strong>{String(automation.name ?? automation.id ?? 'Automation')}</strong><span>{String(automation.status ?? 'configured')}</span></div></div>)}</div>
+            </section>
+          )}
+          {active === 'memory' && (
+            <section>
+              <div className="section-head"><div><div className="eyebrow"><Brain size={14}/> MEMORY</div><h1>Sentinel Memory</h1><p>Durable tenant-scoped context from Civitas.</p></div></div>
+              <div className="panel glass full">{memoryRecords.length === 0 ? <p>No persisted memory records.</p> : memoryRecords.map((record, index) => <div className="event" key={String(record.id ?? index)}><span className="event-dot"/><div><strong>{String(record.memoryType ?? 'memory')}</strong><p>{String(record.content ?? record.value ?? 'record')}</p><small>{String(record.state ?? 'active')}</small></div></div>)}</div>
+            </section>
+          )}
+          {active === 'devices' && (
+            <section>
+              <div className="section-head"><div><div className="eyebrow"><Cpu size={14}/> DEVICE FABRIC</div><h1>Paired devices</h1><p>Live tenant-scoped device credentials and states.</p></div></div>
+              <div className="panel glass full">{devices.length === 0 ? <p>No paired devices.</p> : devices.map((device, index) => <div className="agent-row" key={String(device.deviceId ?? index)}><div><strong>{String(device.name ?? device.deviceId ?? 'Device')}</strong><span>{String(device.status ?? 'paired')} · {String(device.scopes ?? '')}</span></div></div>)}</div>
+            </section>
+          )}
           {active === 'settings' && <EmptyPanel title="System Configuration" copy="Configure authority boundaries, providers, agent defaults, integrations, and execution policy." icon={Settings} />}
         </div>
       </main>
