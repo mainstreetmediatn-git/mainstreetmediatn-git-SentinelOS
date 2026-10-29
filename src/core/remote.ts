@@ -1,7 +1,6 @@
 import type {
   AuditEvent,
   AuditPersistence,
-  StorageLike as RuntimeStorageLike,
 } from './runtime'
 import { LocalStorageAuditPersistence } from './runtime'
 import type {
