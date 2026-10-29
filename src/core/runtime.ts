@@ -143,6 +143,7 @@ export interface CivitasAdapter {
   requestApproval?(request: ExecutionRequest, agent: AgentManifest, capability: Capability): Promise<ApprovalRecord>
   getApproval?(approvalId: string): Promise<ApprovalRecord>
   approveApproval?(approvalId: string): Promise<ApprovalRecord>
+  rejectApproval?(approvalId: string): Promise<ApprovalRecord>
   listAgents?(): Promise<AgentManifest[]>
   listAuditEvents?(): Promise<AuditEvent[]>
   listJobs?(): Promise<Array<Record<string, unknown>>>
@@ -260,6 +261,11 @@ export class SentinelRuntime {
   async approveApproval(approvalId: string): Promise<ApprovalRecord> {
     if (!this.civitas.approveApproval) throw new Error('Civitas approval API is not configured')
     return this.civitas.approveApproval(approvalId)
+  }
+
+  async rejectApproval(approvalId: string): Promise<ApprovalRecord> {
+    if (!this.civitas.rejectApproval) throw new Error('Civitas approval API is not configured')
+    return this.civitas.rejectApproval(approvalId)
   }
 
   private release(request: ExecutionRequest) {
